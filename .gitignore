@@ -1,3 +1,107 @@
-.build
-com.o
-.cache
+# =================
+# Out-of-tree build
+# =================
+/build/
+/cmake-build-*/
+/out/
+
+# ==================
+# Linux kernel build
+# ==================
+*.o
+*.ko
+*.mod
+*.mod.c
+*.mod.o
+.*.cmd
+*.dwo
+*.lst
+*.symtypes
+*.rmeta
+
+modules.order
+Module.symvers
+.tmp_versions/
+
+# Local kernel configuration file
+.config
+.config.old
+
+# Module signing keys (standard kernel naming)
+/signing_key.*
+/certs/signing_key.*
+*.priv
+
+# ===========
+# Device Tree
+# ===========
+*.dtb
+*.dtbo
+*.dts.tmp
+
+# =========================
+# Patches and merge residue
+# =========================
+*.orig
+*.rej
+/0*.patch
+
+# ===================================
+# Binaries, libraries and C artifacts
+# ===================================
+*.a
+*.so
+*.so.*
+*.out
+*.elf
+*.bin
+*.map
+
+# =================
+# Yocto / Buildroot
+# =================
+/tmp/
+/downloads/
+/sstate-cache/
+/buildroot-*/
+
+# =========================
+# Testing, fuzzing and Qemu
+# =========================
+/tests/qemu/*.img
+/tests/qemu/rootfs/
+*.iso
+
+# Fuzzing outputs
+/tests/fuzz/corpus/
+/tests/fuzz/crashers/
+
+# Coverage and profiling
+*.gcda
+*.gcno
+*.gcov
+*.profraw
+
+# =========================
+# Tools, editors and system
+# =========================
+*.log
+*.clang-format-backup
+*.sh.bak
+.cache/
+.clangd/
+compile_commands.json
+
+.vscode/
+.idea/
+.vscode-ctags
+*.swp
+*.swo
+*~
+
+.DS_Store
+Thumbs.db
+
+.tldr/
+*.log
+trash/

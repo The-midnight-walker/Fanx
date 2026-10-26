@@ -1,0 +1,98 @@
+-text=auto eol=lf
+
+# ===========
+# Source code
+# ===========
+*.c     text diff=cpp eol=lf
+*.h     text diff=cpp eol=lf
+*.cpp   text diff=cpp eol=lf
+*.hpp   text diff=cpp eol=lf
+*.S     text diff=cpp eol=lf
+
+# UAPI header: counted as C by GitHub (rather than C++)
+*.h     linguist-language=C
+
+# ===========
+# Device Tree
+# ===========
+*.dts   text diff=cpp eol=lf
+*.dtsi  text diff=cpp eol=lf
+*.dtso  text diff=cpp eol=lf
+
+# =======
+# Scripts
+# =======
+*.sh    text eol=lf
+*.bash  text eol=lf
+*.py    text diff=python eol=lf
+*.cocci text eol=lf
+
+# =============
+# Build systems
+# =============
+Makefile        text eol=lf
+Makefile.*      text eol=lf
+Kbuild          text eol=lf
+Kconfig*        text eol=lf
+*.mk            text eol=lf
+CMakeLists.txt  text eol=lf
+*.cmake         text eol=lf
+
+# ============================================
+# System integration (udev, systemd and Yocto)
+# ============================================
+*.rules     text eol=lf
+*.service   text eol=lf
+*.bb        text eol=lf
+*.bbappend  text eol=lf
+*.inc       text eol=lf
+
+# =====================================
+# Documentation, configuration and data
+# =====================================
+*.md        text eol=lf
+*.rst       text eol=lf
+*.txt       text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.toml      text eol=lf
+.gitignore  text eol=lf
+.gitattributes text eol=lf
+.editorconfig  text eol=lf
+.clang-format  text eol=lf
+
+docs/**     linguist-documentation
+
+# ============================================
+# Patches: never modify line endings or spaces,
+# otherwise `git am` / `patch` may fail.
+# =============================================
+*.patch     -text
+*.diff      -text
+
+# ==============================
+# Binaries, objects and archives
+# ==============================
+*.o         binary
+*.ko        binary
+*.a         binary
+*.so        binary
+*.so.*      binary
+*.elf       binary
+*.bin       binary
+*.dtb       binary
+*.dtbo      binary
+*.img       binary
+*.p12       binary
+*.tar.gz    binary
+*.zip       binary
+
+# ====================
+# Images and resources
+# ====================
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.svg       text eol=lf
