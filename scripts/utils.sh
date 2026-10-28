@@ -9,18 +9,26 @@
 _load_ansi_color()
 {
     if [ "${_DO_COLOR:-0}" -eq 1 ]; then
-        RED='\033[0;31m'
-        GREEN='\033[0;32m'
-        YELLOW='\033[0;33m'
+        if [ "${_DO_BOLD:-0}" -eq 1 ]; then
+            _STYLE='\033[1;'
+        else
+            _STYLE='\033[0;'
+        fi
+        RED="${_STYLE}31m"
+        GREEN="${_STYLE}32m"
+        YELLOW="${_STYLE}33m"
+        BLUE="${_STYLE}34m"
         NC='\033[0m'
     else
         RED=''
         GREEN=''
         YELLOW=''
+        BLUE=''
         NC=''
     fi
     OK="${GREEN}[ ok ]${NC}"
     NOT="${RED}[ X  ]${NC}"
+    _COLORS="red green yellow blue"
 }
 
 _print_y()
@@ -50,6 +58,15 @@ _print_r()
     fi
 }
 
+_print_b()
+{
+    if [ "${_DO_COLOR:-0}" -eq 1 ]; then
+        printf "%b%s%b\n" "${BLUE}" "$1" "${NC}"
+    else
+        printf "%s\n" "$1"
+    fi
+}
+
 print_err()
 {
     # Print error message in red
@@ -59,7 +76,7 @@ print_err()
 print_success()
 {
     # Print success message in green
-    printf "%s" "---| "
+    printf "%s" "*"
     _print_g "$1"
 }
 
@@ -73,7 +90,7 @@ print_info()
 }
 
 # =============================
-# RIGHTS, FILES AND PRIVILIEGES
+# RIGHTS, FILES AND PRIVILEGES
 # =============================
 
 _is_login_root()
@@ -172,12 +189,12 @@ _cp_file()
     _cpf_dest="$2"
 
     if [ ! -f "${_cpf_src}" ]; then
-        print_err "Error: Source file '${_cpf_src}' does not exist."
+        print_err "Source file '${_cpf_src}' does not exist."
         return 1
     fi
 
     if ! cp -p "${_cpf_src}" "${_cpf_dest}"; then
-        print_err "Failed to copy '${_cpf_src}' to '${_cpf_dest}'." >&2
+        print_err "Failed to copy '${_cpf_src}' to '${_cpf_dest}'."
         return 1
     fi
 

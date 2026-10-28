@@ -1,36 +1,29 @@
 # SPDX-License-Identifier: GPL-2.0
 
-# =============
-# CONFIGURATION
-# =============
-ROOT_DIR   := $(CURDIR)
-BUILD_DIR  := $(ROOT_DIR)/build
-DRIVER_DIR := $(ROOT_DIR)/kernel
-APP_DIR    := $(ROOT_DIR)/app
+CONFIG_DIR ?= $(shell \
+	dir="$(CURDIR)"; \
+	while [ "$$dir" != "/" ]; do \
+		if [ -d "$$dir/build-aux" ]; then \
+			realpath --relative-to="$(CURDIR)" "$$dir/build-aux"; \
+			break; \
+		fi; \
+		dir=$$(dirname "$$dir"); \
+	done \
+)
 
-# Outputs
-COLOR   ?= 1
-IN_BOLD ?= 0
-
-# Build Parameters
-DEBUG_MODE ?= 1
-#TODO: implement the kernel macro $(Q)
-
-VERSION ?= $(shell cat $(ROOT_DIR)/VERSION 2>/dev/null || echo "0.0.0-unknown")
-
-export ROOT_DIR VERSION BUILD_DIR COLOR IN_BLOD DEBUG_MODE
-
-include $(ROOT_DIR)/build-aux/utils.mk
+include $(CONFIG_DIR)/config.mk
 
 # =====
 # BUILD
 # =====
-.PHONY: all help \
+.PHONY: all help print-version \
         driver app \
         build build-driver build-app \
         format format-driver format-app \
         sa sa-driver sa-app \
-        clean clean-driver clean-app
+        clean clean-driver clean-app \
+        run run-driver run-app \
+        mrproper env app-env driver-env
 
 .DEFAULT_GOAL := help
 
@@ -39,10 +32,7 @@ print-version:
 	$(call print_b,$(VERSION))
 
 # Sequential on purpose, even with make -j
-all:
-	$(MAKE) clean
-	$(MAKE) format
-	$(MAKE) build
+all: clean format build
 
 # Print kernelspace module (driver) help
 driver:
@@ -63,42 +53,62 @@ driver-%:
 build: build-driver build-app
 
 build-driver:
-	$(call print_step,Building kernel driver.)
+	$(call print_step,Building kernel driver)
 	$(MAKE) -C $(DRIVER_DIR) build
 
 build-app:
-	$(call print_step,Building userspace application.)
+	$(call print_step,Building userspace application)
 	$(MAKE) -C $(APP_DIR) build
 
 format: format-driver format-app
 
 format-driver:
-	$(call print_step,Formatting kernel driver source code (.c, .h) files.)
+	$(call print_step,Formatting kernel driver source code)
 	$(MAKE) -C $(DRIVER_DIR) format
 
 format-app:
-	$(call print_step,Formatting userspace source code (.c, .cpp, .h) files.)
+	$(call print_step,Formatting userspace source code)
 	$(MAKE) -C $(APP_DIR) format
 
 sa: sa-driver sa-app
 
 sa-driver:
-	$(call print_step,Running static analysis on the kernel driver.)
+	$(call print_step,Running static analysis on kernel driver)
 	$(MAKE) -C $(DRIVER_DIR) sa
 
 sa-app:
-	$(call print_step,Running static analysis on the userspace application.)
+	$(call print_step,Running static analysis on userspace application)
 	$(MAKE) -C $(APP_DIR) sa
 
 clean: clean-driver clean-app
 
 clean-driver:
-	$(call print_step,Cleaning kernel driver build artifacts.)
+	$(call print_step,Cleaning kernel driver build artifacts)
 	$(MAKE) -C $(DRIVER_DIR) clean
 
 clean-app:
-	$(call print_step,Cleaning userspace build artifacts.)
+	$(call print_step,Cleaning userspace build artifacts)
 	$(MAKE) -C $(APP_DIR) clean
+
+run: run-app run-driver
+
+run-driver:
+	@$(call print_y,run-driver: not implemented yet)
+
+run-app:
+	@$(call print_y,run-app: not implemented yet)
+
+mrproper:
+	$(call print_step,Clearing entire build environment)
+	rm -rf $(BUILD_DIR)
+
+env: app-env driver-env
+
+app-env:
+	$(MAKE) -C $(APP_DIR) env
+
+driver-env:
+	$(MAKE) -C $(DRIVER_DIR) env
 
 # =========
 # HELP MENU
@@ -113,14 +123,17 @@ help:
 	@echo "  build           Build both kernel driver and userspace application"
 	@echo "  build-driver    Build the kernel driver only"
 	@echo "  build-app       Build the userspace application only"
+	@echo "  env             Prepare build environment for app and driver"
 	@echo "  driver          Print kernelspace module (driver) Makefile 'help' target ($(DRIVER_DIR))"
 	@echo "  app             Print userspace application Makefile 'help' target ($(APP_DIR))"
 	@echo "  app-<target>    Run app targets, see 'make app'"
 	@echo "  driver-<target> Run driver targets, see 'make driver'"
 	@echo "  clean           Remove build artifacts across the project"
-	@echo "  print-version   Print project version"
 	@echo "  clean-driver    Remove kernel driver build artifacts"
 	@echo "  clean-app       Remove userspace build artifacts"
+	@echo "  mrproper        Completely remove the build directory ($(BUILD_DIR))"
+	@echo "  run             Run userspace app and driver test (stub)"
+	@echo "  print-version   Print project version"
 	@echo "  help            Display this help message"
 	@echo ""
 	$(call print_g,Code Style and Quality Targets ::)

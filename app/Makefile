@@ -16,17 +16,42 @@
 # LICENSE     : GPLv2
 # VERSION     : 0.4
 
-ROOT_DIR?=..
+APP_C  ?= fanx
+
+CONFIG_DIR ?= $(shell \
+	dir="$(CURDIR)"; \
+	while [ "$$dir" != "/" ]; do \
+		if [ -d "$$dir/build-aux" ]; then \
+			echo "$$dir/build-aux"; \
+			break; \
+		fi; \
+		dir=$$(dirname "$$dir"); \
+	done \
+)
+
+include $(CONFIG_DIR)/config.mk
 
 # =============
 # CONFIGURATION
 # =============
-APK_C    ?= fanx
-PKG_NAME ?= $(APK_C)
-SRC      := $(APK_C).cpp
+# The entrypoint file
+APP_SRC      := $(APP_DIR)/$(APP_C).cpp
+CPP_SRC_FILES := $(APP_SRC)
 
-ALL      := prod prod_2part debug
-ALL_NM   := $(APK_C) $(APK_C)_dbg $(APK_C)_dbg_asan $(APK_C)_dbg_ub $(APK_C)_gcov
+# Manage building files
+APP_EXE := $(APP_BUILD_DIR)/$(APP_C)
+PKG_NAME ?= $(APP_EXE)
+
+ALL_GEN_SRC += $(APP_EXE)
+
+# All miscellaneous files generated
+ALL_GEN_NM  :=  $(APP_EXE)_dbg $(APP_EXE)_dbg_asan $(APP_EXE)_dbg_ub $(APP_EXE)_gcov $(APP_EXE).debug
+ALL_GEN_TAR := $(patsubst %, $(APP_BUILD_DIR)/%, *.tar.xz *.tar.gz *.tar.bz2)
+ALL_GEN_MISC:= $(patsubst %, $(APP_BUILD_DIR)/%, core* vgcore* *.o *~ *.gcov *.gcda *.gcno *.ast)
+
+# Shell scripts
+SHELL_DIRS ?= $(SCRIPTS_DIR) $(CONFIG_DIR)
+SHELL_FILES = $(shell find $(SHELL_DIRS) -name "*.sh" 2>/dev/null)
 
 # --- Toolchain
 CXX      := $(CROSS_COMPILE)g++
@@ -45,9 +70,7 @@ CXXFLAGS_DBG_UB   := $(CXXFLAGS_DBG) -fsanitize=undefined
 #CXXFLAGS_DBG_MSAN:= $(CXXFLAGS_DBG) -fsanitize=memory
 CXXFLAGS_GCOV     := $(CXXFLAGS_DBG) -fprofile-arcs -ftest-coverage
 
-# --- Tool Configuration
-SRC_FILES   := $(wildcard *.c *.h *.cpp *.hpp)
-
+# --- Tools Configuration
 CHECKPATCH  ?= $(KDIR)/scripts/checkpatch.pl
 CLANG_FORMAT:= clang-format
 FLAWFINDER  := flawfinder
@@ -56,77 +79,102 @@ VALGRIND    := valgrind
 GCOV        := gcov
 TAR         := tar
 CLANG_CHECK := clang-check
-
-# Outputs
-COLOR   ?= 1
-#IN_BOLD ?= 0
-
-include $(ROOT_DIR)/build-aux/utils.mk
+SHFMT      ?= shfmt
+SHELLCHECK ?= shellcheck
 
 # =====
 # BUILD
 # =====
 .PHONY: all build prod prod_2part debug format format-check \
         sa sa_flawfinder sa_cppcheck print_ast valgrind covg \
-        dist tarxz-pkg clean-dist dist-clean package clean help
+        dist tarxz-pkg clean-dist dist-clean package clean help \
+        env clear-env lint-shell format-shell mrproper
 
 .DEFAULT_GOAL := help
 
 all: clean format sa prod prod_2part debug
 
-build: prod
+ifeq ($(DEBUG_MODE),1)
+    BUILD_TARGET := debug
+else
+    BUILD_TARGET := prod_2part
+endif
 
-prod: $(SRC)
+build: $(BUILD_TARGET)
+prod: env $(APP_SRC)
 	$(call print_step,Building 'production'-ready target ($(PROD_OPTLEVEL), no debug, stripped))
-	$(CXX) $(CXXFLAGS) $(SRC) -o $(APK_C)
-	$(STRIP) --strip-all ./$(APK_C)
+	$(call find_package,$(CXX))
+	$(call find_package,$(STRIP))
+	$(CXX) $(CXXFLAGS) $(APP_SRC) -o $(APP_EXE)
+	$(STRIP) --strip-all $(APP_EXE)
 
-prod_2part: debug $(SRC)
-	$(call print_step,Building 'production'-ready 2-part target ($(PROD_OPTLEVEL), no debug, stripped))
-	$(CXX) $(CXXFLAGS) $(SRC) -o $(APK_C)
-	$(STRIP) --strip-debug ./$(APK_C)
-	$(OBJCOPY) --add-gnu-debuglink=./$(APK_C)_dbg ./$(APK_C)
+prod_2part: debug
+	$(call print_step,Building 'production'-ready 2-part target ($(PROD_OPTLEVEL), separate debug symbols))
+# Check dependencies
+	$(call find_package,$(CXX))
+	$(call find_package,$(OBJCOPY))
+	$(call find_package,$(STRIP))
+	$(CXX) $(CXXFLAGS) $(APP_SRC) -o $(APP_EXE)
+	$(OBJCOPY) --only-keep-debug $(APP_EXE) $(APP_EXE).debug
+	$(STRIP) --strip-unneeded $(APP_EXE)
+	$(OBJCOPY) --add-gnu-debuglink=$(APP_EXE).debug $(APP_EXE)
 
-debug: $(SRC)
+debug: env $(APP_SRC)
 	$(call print_step,Building 'debug'-ready targets (with debug symbolic info, not stripped))
-	$(CXX) $(CXXFLAGS_DBG) $(SRC) -o $(APK_C)_dbg
+	$(call find_package,$(CXX))
+	$(CXX) $(CXXFLAGS_DBG) $(APP_SRC) -o $(APP_EXE)_dbg
 #-- Sanitizing
-	$(CXX) $(CXXFLAGS_DBG_ASAN) $(SRC) -o $(APK_C)_dbg_asan
-	$(CXX) $(CXXFLAGS_DBG_UB) $(SRC) -o $(APK_C)_dbg_ub
-#	$(CXX) $(CXXFLAGS_DBG_MSAN) $(SRC) -o $(APK_C)_dbg_msan
+	$(CXX) $(CXXFLAGS_DBG_ASAN) $(APP_SRC) -o $(APP_EXE)_dbg_asan
+	$(CXX) $(CXXFLAGS_DBG_UB) $(APP_SRC) -o $(APP_EXE)_dbg_ub
+#	$(CXX) $(CXXFLAGS_DBG_MSAN) $(APP_SRC) -o $(APP_EXE)_dbg_msan
+
+env:
+	$(call print_step,Creating userspace application build environment)
+# Will create all missing directories : mkdir -p ...
+	$(BUILDER) $(BUILDER_FLAGS) --create --directory $(APP_BUILD_DIR)
+	$(BUILDER) $(BUILDER_FLAGS) --copy --files $(APP_DIR)/Makefile  --directory $(APP_BUILD_DIR)
+	$(BUILDER) $(BUILDER_FLAGS) --copy --files $(ROOT_DIR)/Makefile --directory $(BUILD_DIR)
+
+clear-env:
+	$(call print_step,Clearing userspace application build environment directories)
+	rm -rf $(APP_BUILD_DIR)/*
 
 # ==========
 # CODE STYLE
-format: format-check format-clang
 # ==========
+format: format-check format-clang format-shell
+
 # clang-format reads the nearest .clang-format file (C++ style for this directory)
 format-clang:
-ifeq (,$(shell command -v $(CLANG_FORMAT) 2>/dev/null))
-	$(call print_error,'$(CLANG_FORMAT)' tool is not installed on your host)
-endif
+	$(call find_package,$(CLANG_FORMAT))
 	$(call print_step,Format userspace source files with clang-format)
-	find . \( -type d \( -name .git -o -name build -o -name 'cmake-build-*' \) -prune \) -o \
+	find $(APP_DIR) $(ROOT_DIR)/include/uapi \
 		-type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) \
 		-exec $(CLANG_FORMAT) --fallback-style=none -i {} +
+
+format-shell: lint-shell
+	$(call find_package,$(SHFMT))
+	$(call print_step,Formatting shell scripts with $(SHFMT))
+	$(SHFMT) -w -i 4 -fn $(SHELL_FILES)
 
 format-check: checkpatch clang-check
 
 clang-check:
-ifeq (,$(shell command -v $(CLANG_FORMAT) 2>/dev/null))
-	$(call print_error,'$(CLANG_FORMAT)' tool is not installed on your host)
-endif
+	$(call find_package,$(CLANG_FORMAT))
 	$(call print_step,Check userspace formatting with clang-format (no file modified))
-	find . \( -type d \( -name .git -o -name build -o -name 'cmake-build-*' \) -prune \) -o \
+	find $(APP_DIR) $(ROOT_DIR)/include/uapi \
 		-type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) \
 		-exec $(CLANG_FORMAT) --fallback-style=none --dry-run --Werror {} +
 
 checkpatch:
-ifeq (,$(shell command -v $(CHECKPATCH) 2>/dev/null))
+	$(call find_package,$(CHECKPATCH))
 	$(call print_step,Running code style check with checkpatch.pl)
 	$(CHECKPATCH) --no-tree -f --max-line-length=95 *.cpp *.hpp *.c *.h 2>/dev/null || true
-else
-	$(call print_err,Checkpatch.pl script not found at $(CHECKPATCH).)
-endif
+
+lint-shell:
+	$(call find_package,$(SHELLCHECK))
+	$(call print_step,Linting shell scripts (POSIX sh) with $(SHELLCHECK))
+	$(SHELLCHECK) -s sh -x $(SHELL_FILES)
 
 # ====================
 # SA - STATIC ANALYSIS
@@ -134,44 +182,34 @@ endif
 sa: sa_flawfinder sa_cppcheck
 
 sa_flawfinder:
-ifeq (,$(shell command -v $(FLAWFINDER) 2>/dev/null))
-	$(call print_error,$(FLAWFINDER) is not installed on your host)
-endif
+	$(call find_package,$(FLAWFINDER))
 	$(call print_step,Running static analysis with flawfinder)
-	$(FLAWFINDER) --neverignore --context $(SRC_FILES)
+	$(FLAWFINDER) --neverignore --context $(CPP_SRC_FILES)
 
 sa_cppcheck:
-ifeq (,$(shell command -v $(CPPCHECK) 2>/dev/null))
-	$(call print_error,$(CPPCHECK) is not installed on your host)
-endif
+	$(call find_package,$(CPPCHECK))
 	$(call print_step,Running static analysis with cppcheck)
-	$(CPPCHECK) -v --force --enable=all -$(CXXSTD) --suppress=missingIncludeSystem .
+	$(CPPCHECK) -v --force --enable=all $(CXXSTD) --suppress=missingIncludeSystem .
 
 print_ast:
-ifeq (,$(shell command -v $(CLANG_CHECK) 2>/dev/null))
-	$(call print_error,'$(CLANG_CHECK)' tool is not installed on your host)
-endif
-	$(call print_step,Static analysis with clang-check : ast-print (output: $(SRC).ast))
-	$(CLANG_CHECK) --ast-print $(SRC) -- $(CXXSTD) > $(SRC).ast 2>&1
+	$(call find_package,$(CLANG_CHECK))
+	$(call print_step,Static analysis with clang-check : ast-print (output: $(APP_EXE).ast))
+	$(CLANG_CHECK) --ast-print $(APP_SRC) -- $(CXXSTD) > $(APP_EXE).ast 2>&1
 
 # Dynamic analysis with valgrind
 valgrind: debug
-ifeq (,$(shell command -v $(VALGRIND) 2>/dev/null))
-	$(call print_error,'$(VALGRIND)' tool is not installed on your host)
-endif
+	$(call find_package,$(VALGRIND))
 	$(call print_step,Dynamic analysis with valgrind)
-	$(VALGRIND) --tool=memcheck --trace-children=yes ./$(APK_C)_dbg
+	$(VALGRIND) --tool=memcheck --trace-children=yes $(APP_EXE)_dbg
 
 # Testing: line coverage with gcov(1)
 covg:
-ifeq (,$(shell command -v $(GCOV) 2>/dev/null))
-	$(call print_error,'$(GCOV)' tool is not installed on your host)
-endif
+	$(call find_package,$(GCOV))
 	$(call print_step,Code coverage with gcov)
-	$(CXX) $(CXXFLAGS_GCOV) $(SRC) -o $(APK_C)_gcov
-	./$(APK_C)_gcov
-	$(GCOV) $(APK_C)_gcov-$(APK_C).gcda
-	@echo "Examine the *.gcov file(s)"
+	$(CXX) $(CXXFLAGS_GCOV) $(APP_SRC) -o $(APP_EXE)_gcov
+	./$(APP_EXE)_gcov
+	$(GCOV) $(APP_EXE)_gcov-$(APP_C).gcda
+	$(call print_y,Examine the *.gcov file(s))
 
 # ================
 # ARCHIVE WITH TAR
@@ -180,25 +218,28 @@ dist: tarxz-pkg
 
 package: tarxz-pkg
 
-tarxz-pkg: clean
-ifeq (,$(shell command -v $(TAR) 2>/dev/null))
-	$(call print_error,'$(TAR)' tool is not installed on your host)
-endif
-	@rm -f ../$(PKG_NAME).tar.xz 2>/dev/null
+tarxz-pkg:
+	$(call find_package,$(TAR))
+	@rm -f $(PKG_NAME).tar.xz 2>/dev/null
 	$(call print_step,Packaging $(PKG_NAME).tar.xz)
-	$(TAR) caf ../$(PKG_NAME).tar.xz *
-	@ls -lh ../$(PKG_NAME).tar.xz
-	$(call print_g,Package created: ../$(PKG_NAME).tar.xz)
+	$(TAR) caf $(PKG_NAME).tar.xz *
+	@ls -lh $(PKG_NAME).tar.xz
+	$(MAKE) clean
+	$(call print_g,Package created: $(PKG_NAME).tar.xz)
 
 clean-dist: dist-clean
 
 dist-clean:
-	$(call print_err,Deleting archive files...)
-	rm -f ../$(PKG_NAME).tar.xz *.tar.gz *.tar.xz *.tar.bz2 2>/dev/null || true
+	$(call print_step,Removing archive files)
+	rm -f $(PKG_NAME).tar.xz $(ALL_GEN_TAR) 2> /dev/null || true
 
 clean:
 	$(call print_step,Cleaning generated files)
-	rm -rf $(ALL_NM) core* vgcore* *.o *~ *.gcov *.gcda *.gcno *.ast
+	rm -f $(ALL_GEN_SRC) $(ALL_GEN_NM) $(ALL_GEN_MISC)
+
+mrproper: clean
+	$(call print_step,Removing entire app build directory)
+	rm -rf $(APP_BUILD_DIR)
 
 # ==============
 # MAKE HELP MENU
@@ -206,7 +247,7 @@ clean:
 help:
 	@echo
 	$(call print_g,=== Makefile Help ===)
-	$(call print_y,Usage: make <target> [APK_C=filename] [PKG_NAME=pkgname] [CROSS_COMPILE=prefix])
+	$(call print_y,Usage: make <target> [APP_C=filename] [PKG_NAME=pkgname] [CROSS_COMPILE=prefix])
 	@echo
 	$(call print_g,Build Targets ::)
 	@echo "  all            Run clean, format, static analysis, and build all targets"
@@ -214,18 +255,23 @@ help:
 	@echo "  prod           Build 'production'-ready target ($(PROD_OPTLEVEL), no debug, stripped)"
 	@echo "  prod_2part     Build production target with gnu_debuglink to debug symbols"
 	@echo "  debug          Build debug targets (with debug info, ASan, and UBSan)"
+	@echo "  env            Create the build environment directory structure"
+	@echo "  clear-env      Clean the contents of the application build directory"
+	@echo "  mrproper       Remove the entire build environment directory ($(APP_BUILD_DIR))"
 	@echo "  clean          Remove binaries, object files and coverage artifacts"
 	@echo "  help           Display this help message"
 	@echo
 	$(call print_g,Code Style Targets ::)
 	@echo "  format         Format C/C++ sources in place with clang-format"
 	@echo "  format-check   Verify formatting without modifying files (for CI)"
+	@echo "  format-shell   Format shell scripts in place with shfmt"
 	@echo
-	$(call print_g,Static Analysis Targets ::)
+	$(call print_g,Static Analysis and Linting Targets ::)
 	@echo "  sa             Run all static analysis tools (flawfinder, cppcheck)"
 	@echo "  sa_flawfinder  Run security static analysis with flawfinder"
 	@echo "  sa_cppcheck    Run static analysis with cppcheck"
 	@echo "  print_ast      Generate Clang AST tree using clang-check"
+	@echo "  lint-shell     Lint shell scripts (POSIX sh) with shellcheck"
 	@echo
 	$(call print_g,Dynamic Analysis Targets ::)
 	@echo "  valgrind       Run memory check on debug binary with valgrind"
@@ -239,8 +285,8 @@ help:
 	@echo "  clean-dist     Remove generated tar archives"
 	@echo
 	$(call print_g,Variables ::)
-	@echo "  APK_C          Source file name without .cpp extension (default: fanx)"
-	@echo "  PKG_NAME       Name used for output package archive (default: \$$(APK_C))"
+	@echo "  APP_C          Source file name without .cpp extension (default: fanx)"
+	@echo "  PKG_NAME       Name used for output package archive (default: \$$(APP_C))"
 	@echo "  CROSS_COMPILE  Cross-compiler toolchain prefix (e.g., arm-linux-gnueabihf-)"
 	@echo "  CXX            C++ compiler binary (default: \$$(CROSS_COMPILE)g++)"
 	@echo "  CXXSTD         C++ standard flag (default: -std=c++17)"
