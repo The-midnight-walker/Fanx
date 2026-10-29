@@ -58,9 +58,9 @@ _do_print()
     _color="$1"
     _msg="$2"
     case "${_color}" in
-    green)  _print_g "${_msg}" ;;
-    blue)   _print_b "${_msg}" ;;
-    red)    _print_r "${_msg}" ;;
+    green) _print_g "${_msg}" ;;
+    blue) _print_b "${_msg}" ;;
+    red) _print_r "${_msg}" ;;
     yellow) _print_y "${_msg}" ;;
     *)
         print_err "Unknown color '${_color}': available colors are green, blue, red, yellow"

@@ -29,6 +29,7 @@ _load_ansi_color()
     OK="${GREEN}[ ok ]${NC}"
     NOT="${RED}[ X  ]${NC}"
     _COLORS="red green yellow blue"
+    export OK NOT _COLORS
 }
 
 _print_y()

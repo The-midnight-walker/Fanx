@@ -27,22 +27,43 @@ BUILD_DIR     := $(ROOT_DIR)/build
 APP_BUILD_DIR := $(BUILD_DIR)/app
 DRV_BUILD_DIR := $(BUILD_DIR)/kernel
 
-# =============
-# OUTPUT STYLES
-# =============
-COLOR   := 1
-VERBOSE := 1
-IN_BOLD := 0
+# =======================================================
+# KERNEL-STYLE FLAGS: V (Verbose), C (Color), B (Bold)
+# =======================================================
+V ?= 0
+C ?= 0
+B ?= 0
 
-ifeq ($(COLOR),1)
-    BUILDER_FLAGS += --color
-endif
+# Backward compatibility with legacy variable names
 ifeq ($(VERBOSE),1)
-    BUILDER_FLAGS += --verbose
+    V := 1
+endif
+ifeq ($(COLOR),1)
+    C := 1
 endif
 ifeq ($(IN_BOLD),1)
+    B := 1
+endif
+
+# Verbose execution (Linux kernel $(Q) macro)
+ifeq ($(V),1)
+    Q :=
+else
+    Q := @
+endif
+
+# Builder script flags
+ifeq ($(C),1)
+    BUILDER_FLAGS += --color
+endif
+ifeq ($(V),1)
+    BUILDER_FLAGS += --verbose
+endif
+ifeq ($(B),1)
     BUILDER_FLAGS += --bold
 endif
+
+export V C B Q
 
 # Package and tool verification macro
 define find_package
