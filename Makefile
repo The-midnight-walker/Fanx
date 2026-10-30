@@ -145,7 +145,9 @@ help:
 	@echo "  sa-app          Run static analyzers for the app only"
 	@echo ""
 	$(call print_g,Variables ::)
-	@echo "  COLOR           Enable/disable colors (default: 1)"
+	@echo "  V               Kernel-style verbose flag (1 = show commands, default: 0)"
+	@echo "  C               Enable/disable colors (default: 1)"
+	@echo "  B               Enable/disable bold text (default: 0)"
 	@echo "  IN_BOLD         Enable/disable bold text (default: 0)"
 	@echo "  DEBUG_MODE      Enable debug mode (default: 1)"
 	@echo "  ROOT_DIR        Current root directory of the project"

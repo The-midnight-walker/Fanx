@@ -54,6 +54,9 @@ $(MOD_NAME_C)-objs ?=
 KERNEL_BUILD_DIR ?= $(if $(BUILD_DIR),$(abspath $(if $(DRV_BUILD_DIR),$(DRV_BUILD_DIR),$(BUILD_DIR)/kernel)),$(abspath $(dir $(firstword $(MAKEFILE_LIST)))))
 KERNEL_DIST_DIR  ?= $(KERNEL_BUILD_DIR)/dist
 SHELL_DIRS   ?= $(SCRIPTS_DIR) $(CONFIG_DIR)
+INCLUDE_DIRS ?= $(ROOT_DIR)/include
+KERNEL_INCLUDE_DIRS := $(foreach dir,$(INCLUDE_DIRS),$(abspath $(dir)))
+KERNEL_INCLUDE_FLAGS := $(addprefix -I,$(KERNEL_INCLUDE_DIRS))
 
 SHELL_FILES  := $(shell find $(SHELL_DIRS) -name "*.sh" 2>/dev/null)
 KERNEL_PKG_NAME  ?= $(KERNEL_DIST_DIR)/$(MOD_NAME_C)
@@ -86,6 +89,7 @@ else
 endif
 
 ccflags-y += -DDYNAMIC_DEBUG_MODULE
+ccflags-y += $(KERNEL_INCLUDE_FLAGS)
 
 # Include kernel configuration settings
 -include $(KDIR)/.config
@@ -156,7 +160,7 @@ all: clean lkcode-style sa compile-bear
 build: env
 	$(call print_step,Building '$(MOD_NAME_C).ko' [ARCH=$(ARCH) KDIR=$(KDIR)])
 	$(call find_package,$(MAKE))
-	$(call run_kbuild,$(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules)
+	$(call run_kbuild,$(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) INCLUDE_DIRS="$(KERNEL_INCLUDE_DIRS)" modules)
 	@if [ -f "$(KERNEL_BUILD_DIR)/$(MOD_NAME_C).ko" ]; then \
 		$(call noat,$(call print_info,Module $(MOD_NAME_C).ko built successfully.)); \
 	else \
@@ -169,10 +173,10 @@ install: env
 	@echo
 	$(call print_g,     Invoking the kernel build)
 	$(call find_package,$(MAKE))
-	$(call run_kbuild,$(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules)
+	$(call run_kbuild,$(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) INCLUDE_DIRS="$(KERNEL_INCLUDE_DIRS)" modules)
 	@echo
 	$(call print_g,     Invoking sudo make modules_install)
-	$(Q)sudo $(MAKE) -C $(KDIR) M=$(KERNEL_BUILD_DIR) modules_install
+	$(Q)sudo $(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" INCLUDE_DIRS="$(KERNEL_INCLUDE_DIRS)" modules_install
 	$(Q)sudo depmod
 	$(call find_package,$(STRIP))
 	@if [ "$(DBG_STRIP)" = "y" ]; then \
@@ -184,13 +188,14 @@ dt: env
 	$(call find_package,$(DTC))
 	$(call print_step,Compiling Device Tree Blob from $(MOD_NAME_C).dts...)
 	$(Q)$(DTC) -@ -I dts -O dtb \
+		$(foreach dir,$(KERNEL_INCLUDE_DIRS),-i $(dir)) \
 		-o $(KERNEL_BUILD_DIR)/$(MOD_NAME_C).dtb \
 		$(KERNEL_SRC_DIR)/$(MOD_NAME_C).dts
 
 nsdeps: env
 	$(call print_step,Resolving namespace dependencies...)
 	$(call find_package,$(MAKE))
-	$(call run_kbuild,$(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" nsdeps)
+	$(call run_kbuild,$(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" INCLUDE_DIRS="$(KERNEL_INCLUDE_DIRS)" nsdeps)
 
 env:
 	$(call print_step,Creating kernel module build environment)
@@ -208,12 +213,13 @@ env:
 # =======================
 # LINUX KERNEL CODE STYLE
 # =======================
+format: lkcode-style
 lkcode-style: clang-format indent checkpatch format-shell
 
 clang-format:
 	$(call find_package,$(CLANG_FORMAT))
 	$(call print_step,Formatting kernel source files with clang-format)
-	$(Q)find "$(KERNEL_SRC_DIR)" "$(ROOT_DIR)/include/uapi" \
+	$(Q)find "$(KERNEL_SRC_DIR)" $(KERNEL_INCLUDE_DIRS) \
 		\( -type d \( -name .git -o -name bkp -o -name build -o -name dist \
 			-o -name 'cmake-build-*' \) -prune \) -o \
 		-type f \( -name '*.c' -o -name '*.h' \) \
@@ -224,12 +230,18 @@ indent:
 	$(call print_step,Applying kernel code style indentation)
 	$(Q)mkdir -p "$(KERNEL_BUILD_DIR)/bkp"
 	$(Q)cp -f "$(KERNEL_SRC_DIR)"/*.[chsS] "$(KERNEL_BUILD_DIR)/bkp/" 2>/dev/null || true
-	$(Q)cd "$(KERNEL_SRC_DIR)" && $(INDENT) -linux --line-length95 *.[chsS] 2>/dev/null || true
+	$(Q)find "$(KERNEL_SRC_DIR)" $(KERNEL_INCLUDE_DIRS) \
+		\( -type d \( -name .git -o -name bkp -o -name build -o -name dist \
+			-o -name 'cmake-build-*' \) -prune \) -o \
+		-type f \( -name '*.c' -o -name '*.h' -o -name '*.S' -o -name '*.s' \) \
+		-exec $(INDENT) -linux --line-length95 {} + 2>/dev/null || true
 
 checkpatch:
 	$(call find_package,$(CHECKPATCH))
 	$(call print_step,Running kernel code style check with checkpatch.pl)
-	$(Q)$(CHECKPATCH) --no-tree -f --max-line-length=95 "$(KERNEL_SRC_DIR)"/*.[ch]
+	$(Q)find "$(KERNEL_SRC_DIR)" $(KERNEL_INCLUDE_DIRS) \
+		-type f \( -name '*.c' -o -name '*.h' \) -print0 | \
+		xargs -0 -r $(CHECKPATCH) --no-tree -f --max-line-length=95
 
 format-shell: lint-shell
 	$(call find_package,$(SHFMT))
@@ -250,33 +262,34 @@ sa_sparse: env
 	$(call find_package,$(SPARSE))
 	$(call find_package,$(MAKE))
 	$(call print_step,Running static analysis with sparse)
-	$(call run_kbuild,$(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" C=2 CHECK="$(SPARSE) --os=linux --arch=$(ARCH)" modules 2>&1 | egrep -v "^\./include/.*\.h|^\./arch/.*\.h")
+	$(call run_kbuild,$(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" C=2 CHECK="$(SPARSE) --os=linux --arch=$(ARCH)" INCLUDE_DIRS="$(KERNEL_INCLUDE_DIRS)" modules 2>&1 | egrep -v "^\./include/.*\.h|^\./arch/.*\.h")
 
 sa_gcc: env
 	$(call find_package,$(MAKE))
 	$(call print_step,Running static analysis with GCC W=1)
-	$(call run_kbuild,$(MAKE) W=1 -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" modules)
+	$(call run_kbuild,$(MAKE) W=1 -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" INCLUDE_DIRS="$(KERNEL_INCLUDE_DIRS)" modules)
 
 sa_flawfinder:
 	$(call find_package,$(FLAWFINDER))
 	$(call print_step,Running static analysis with flawfinder)
-	$(Q)$(FLAWFINDER) "$(KERNEL_SRC_DIR)"/*.[ch]
+	$(Q)$(FLAWFINDER) "$(KERNEL_SRC_DIR)" $(KERNEL_INCLUDE_DIRS)
 
 sa_cppcheck:
 	$(call find_package,$(CPPCHECK))
 	$(call print_step,Running static analysis with cppcheck)
 	$(Q)$(CPPCHECK) -v --force --enable=all \
+		$(KERNEL_INCLUDE_FLAGS) \
 		-i "$(KERNEL_BUILD_DIR)" -i "$(KERNEL_DIST_DIR)" \
-		--suppress=missingIncludeSystem "$(KERNEL_SRC_DIR)"
+		--suppress=missingIncludeSystem "$(KERNEL_SRC_DIR)" $(KERNEL_INCLUDE_DIRS)
 
-# ================
+# =================
 # BUILD ENVIRONMENT
-# ================
+# =================
 compile-bear: env
 	$(call find_package,$(BEAR))
 	$(call find_package,$(MAKE))
 	$(call print_step,Generating compile_commands.json with bear...)
-	$(call run_kbuild,cd "$(KERNEL_BUILD_DIR)" && $(BEAR) -- $(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules)
+	$(call run_kbuild,cd "$(KERNEL_BUILD_DIR)" && $(BEAR) -- $(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) INCLUDE_DIRS="$(KERNEL_INCLUDE_DIRS)" modules)
 	@if [ -f "$(KERNEL_BUILD_DIR)/$(MOD_NAME_C).ko" ]; then \
 		$(call noat,$(call print_info,Module built and compile_commands.json generated.)); \
 	fi
@@ -305,11 +318,7 @@ clean:
 	@if [ -d "$(KERNEL_BUILD_DIR)" ] && [ -d "$(KDIR)" ]; then \
 		$(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" clean; \
 	fi
-	$(Q)rm -f "$(KERNEL_BUILD_DIR)"/*~ "$(KERNEL_BUILD_DIR)/compile_commands.json" \
-		"$(KERNEL_BUILD_DIR)"/*.o "$(KERNEL_BUILD_DIR)"/*.ko \
-		"$(KERNEL_BUILD_DIR)"/*.mod "$(KERNEL_BUILD_DIR)"/*.mod.c \
-		"$(KERNEL_BUILD_DIR)"/*.symvers "$(KERNEL_BUILD_DIR)"/*.order \
-		"$(KERNEL_BUILD_DIR)"/*.dtb
+	$(Q)rm -f $(patsubst %,$(KERNEL_BUILD_DIR)/%,*~ compile_commands.json *.o *.ko *.mod *.mod.c *.symvers *.order *.dtb)
 	$(call print_g,Cleaning finished.)
 
 mrproper: clean clean-dist
@@ -365,6 +374,7 @@ help:
 	@echo "  CROSS_COMPILE   Cross-compiler toolchain prefix"
 	@echo "  KDIR            Kernel build tree directory"
 	@echo "  KMODDIR         Module installation directory"
+	@echo "  INCLUDE_DIRS    Additional API/header directories"
 	@echo "  KERNEL_BUILD_DIR Build output directory (default: BUILD_DIR/kernel)"
 	@echo "  KERNEL_DIST_DIR Source archive directory (default: BUILD_DIR/kernel/dist)"
 	@echo "  ONDEBUG         Enable debug flags and disable stripping (y/n)"

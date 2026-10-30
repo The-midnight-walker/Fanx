@@ -67,7 +67,7 @@ export V C B Q
 
 # Package and tool verification macro
 define find_package
-	@command -v $(1) >/dev/null 2>&1 || { $(BUILDER) $(BUILDER_FLAGS) --print red "$(1) is not installed on your host" >&2; exit 1; }
+	@command -v $(1) >/dev/null 2>&1 || { $(BUILDER) $(BUILDER_FLAGS) --print red "\"$(1)\" package or script could not be found on your host" >&2; exit 1; }
 endef
 
 define print_err
