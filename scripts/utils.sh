@@ -5,6 +5,9 @@
 # ============
 # OUTPUT STYLE
 # ============
+_DO_VERBOSE=0
+_DO_COLOR=0
+_DO_BOLD=0
 # ANSI color definitions (POSIX printf compatible)
 _load_ansi_color()
 {

@@ -1,0 +1,35 @@
+# Debian clang version 14.0.6
+
+CompileFlags:
+# Cross compile
+# Add: [--target=aarch64-linux-gnu]
+  CompilationDatabase: build/kernel
+  Remove:
+    - -ftrivial-auto-var-init=*
+    - -mfunction-return=*
+    - -mindirect-branch=*
+    - -mindirect-branch-register
+    - -mindirect-branch-cs-prefix
+    - -fno-allow-store-data-races
+    - -fconserve-stack
+    - -mpreferred-stack-boundary=*
+    - -fno-var-tracking-assigned
+    - -fvar-tracking-assignments
+    - -fno-ipa-cp-clone
+    - -fno-reorder-blocks
+    - -fno-partial-inlining
+    - -mrecord-mcount
+    - -falign-jumps=*
+    - -falign-functions=*
+    - -mskip-rax-setup
+    - -fmin-function-alignment=*
+    - -Wno-maybe-uninitialized
+    - -Werror=*
+
+Diagnostics:
+  UnusedIncludes: None
+  ClangTidy:
+    Remove: ["*"]
+
+Index:
+  Background: Build

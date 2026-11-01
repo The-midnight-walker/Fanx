@@ -35,12 +35,12 @@ fi
 
 usage()
 {
-    printf 'Usage: %s [--verbose] [--bold] [--color] [options]\n' "${SCRIPT_NAME}"
-    printf '       %s --copy --files <files...> --directory <dst>\n' "${SCRIPT_NAME}"
-    printf '       %s --create --directory <dst>\n' "${SCRIPT_NAME}"
-    printf '       %s --print <green|blue|red|yellow> <string>\n' "${SCRIPT_NAME}"
-    printf '       %s --print-err <string>\n\n' "${SCRIPT_NAME}"
-    echo "Options:"
+    _print_g "Usage: ${SCRIPT_NAME} [--verbose] [--bold] [--color] [options]"
+    _print_g "       ${SCRIPT_NAME} --copy --files <files...> --directory <dst>"
+    _print_g "       ${SCRIPT_NAME} --create --directory <dst>"
+    _print_g "       ${SCRIPT_NAME} --print <green|blue|red|yellow> <string>"
+    _print_g "       ${SCRIPT_NAME} --print-err <string>"
+    _print_y "Options:"
     echo "  --verbose                  Enable verbose informational messages"
     echo "  --bold                     Enable bold text styling in colors"
     echo "  --color                    Enable ANSI colored output"
@@ -69,8 +69,18 @@ _do_print()
     esac
 }
 
+_opt_error()
+{
+    _load_ansi_color
+    print_err "$1"
+}
+
 _parser()
 {
+    _REST_ARGS=""
+    _DO_FILES=""
+    _DO_HELP=0
+
     if [ "$#" -eq 0 ]; then
         usage
         return 2
@@ -95,74 +105,86 @@ _parser()
             _DO_BOLD=1
             shift
             ;;
-        --print)
-            if [ -z "${2}" ] || [ -z "${3}" ]; then
-                _load_ansi_color
-                print_err "Option '--print' requires a color and a string"
-                printf 'Usage: %s --print <green|blue|red|yellow> <string>\n' "${SCRIPT_NAME}" >&2
-                return 1
-            fi
-            _load_ansi_color
-            _do_print "${2}" "${3}" || return 1
-            shift 3
-            ;;
-        --print-err)
-            if [ -z "${2}" ] || [ "${2#-}" != "${2}" ]; then
-                _load_ansi_color
-                print_err "Option '${1}' requires a string"
-                return 1
-            fi
-            _load_ansi_color
-            print_err "${2}"
-            shift 2
-            ;;
         --copy)
             _DO_COPY=1
             shift
             ;;
+        --print)
+            if [ "$#" -lt 3 ] || [ -z "${2}" ] || [ -z "${3}" ]; then
+                _opt_error "Option '--print' requires a color and a string"
+                printf 'Usage: %s --print <green|blue|red|yellow> <string>\n' "${SCRIPT_NAME}" >&2
+                return 2
+            fi
+            _DO_PRINT_COLOR="${2}"
+            _DO_PRINT_MSG="${3}"
+            shift 3
+            ;;
+        --print-err)
+            if [ "$#" -lt 2 ] || [ -z "${2}" ]; then
+                _opt_error "Option '${1}' requires a string"
+                return 2
+            fi
+            _DO_PRINT_ERR="${2}"
+            shift 2
+            ;;
         --files)
-            if [ -z "${2}" ] || [ "${2#-}" != "${2}" ]; then
-                _load_ansi_color
-                print_err "Option '--files' requires at least one file name"
-                return 1
+            if [ "$#" -lt 2 ] || [ -z "${2}" ] || [ "${2#-}" != "${2}" ]; then
+                _opt_error "Option '--files' requires at least one file name"
+                return 2
             fi
             shift
-            while [ "${#}" -gt 0 ] && [ "${1#-}" = "${1}" ]; do
+            while [ "$#" -gt 0 ] && [ "${1#-}" = "${1}" ]; do
                 _DO_FILES="${_DO_FILES} ${1}"
                 shift
             done
             ;;
+        --directory=*)
+            _DO_DIR="${1#--directory=}"
+            if [ -z "${_DO_DIR}" ]; then
+                _opt_error "Option '--directory' requires a directory path"
+                return 2
+            fi
+            shift
+            ;;
         --directory)
-            if [ -z "${2}" ]; then
-                _load_ansi_color
-                print_err "Option '--directory' requires a directory path"
-                return 1
+            if [ "$#" -lt 2 ] || [ -z "${2}" ]; then
+                _opt_error "Option '--directory' requires a directory path"
+                return 2
             fi
             _DO_DIR="${2}"
             shift 2
             ;;
         --help)
-            usage
-            return 0
+            _DO_HELP=1
+            shift
             ;;
         --)
             shift
-            break
+            _REST_ARGS="$*"
+            return 0
             ;;
         *)
-            _load_ansi_color
-            print_err "Unknown option '$1'"
+            _opt_error "Unknown option '$1'"
             usage
             return 2
             ;;
         esac
     done
 
+    [ "${_DO_HELP:-0}" -eq 1 ] && return 3
     return 0
 }
 
 _main()
 {
+    if [ -n "${_DO_PRINT_COLOR}" ]; then
+        _do_print "${_DO_PRINT_COLOR}" "${_DO_PRINT_MSG}" || return 1
+    fi
+
+    if [ -n "${_DO_PRINT_ERR}" ]; then
+        print_err "${_DO_PRINT_ERR}"
+    fi
+
     if [ -n "${_DO_CRTDIR}" ]; then
         if [ -z "${_DO_DIR}" ]; then
             print_err "--create requires --directory <dst>"
@@ -186,8 +208,18 @@ _main()
 
 main()
 {
-    _parser "$@" || return "$?"
+    _parser "$@"
+    rc=$?
     _load_ansi_color
+    case "${rc}" in
+    0) ;;
+    3)
+        usage
+        return 0
+        ;;
+    *) return "${rc}" ;;
+    esac
+
     _main
 }
 

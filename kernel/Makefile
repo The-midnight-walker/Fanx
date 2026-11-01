@@ -18,7 +18,8 @@
 # source filename without the '.c' file extension.
 MOD_NAME_C ?= fanx
 
-CONFIG_DIR ?= $(shell \
+ifeq ($(KERNELRELEASE),)
+CONFIG_DIR := $(shell \
 	dir="$(CURDIR)"; \
 	while [ "$$dir" != "/" ]; do \
 		if [ -d "$$dir/build-aux" ]; then \
@@ -28,6 +29,10 @@ CONFIG_DIR ?= $(shell \
 		dir=$$(dirname "$$dir"); \
 	done \
 )
+ifeq ($(strip $(CONFIG_DIR)),)
+$(error Could not find build-aux/config.mk from $(CURDIR))
+endif
+endif
 
 # Resolve to the source directory even when this copied Makefile is invoked
 # from build/kernel. During kbuild's recursive read, keep its staged location.
@@ -54,11 +59,29 @@ $(MOD_NAME_C)-objs ?=
 KERNEL_BUILD_DIR ?= $(if $(BUILD_DIR),$(abspath $(if $(DRV_BUILD_DIR),$(DRV_BUILD_DIR),$(BUILD_DIR)/kernel)),$(abspath $(dir $(firstword $(MAKEFILE_LIST)))))
 KERNEL_DIST_DIR  ?= $(KERNEL_BUILD_DIR)/dist
 SHELL_DIRS   ?= $(SCRIPTS_DIR) $(CONFIG_DIR)
-INCLUDE_DIRS ?= $(ROOT_DIR)/include
-KERNEL_INCLUDE_DIRS := $(foreach dir,$(INCLUDE_DIRS),$(abspath $(dir)))
+INCLUDE_DIRS ?= $(ROOT_DIR)/include $(ROOT_DIR)/include/uapi
+KERNEL_INCLUDE_DIRS := $(sort $(abspath $(ROOT_DIR) $(INCLUDE_DIRS)))
+KERNEL_BACKUP_INCLUDE_DIRS := $(foreach dir,$(INCLUDE_DIRS),$(abspath $(dir)))
 KERNEL_INCLUDE_FLAGS := $(addprefix -I,$(KERNEL_INCLUDE_DIRS))
+KERNEL_STYLE_DIRS := $(sort $(KERNEL_SRC_DIR) $(KERNEL_BACKUP_INCLUDE_DIRS))
+KERNEL_FIND_PRUNE := \( -type d \( -name .git -o -name bkp -o -name build -o -name dist -o -name 'cmake-build-*' \) -prune \) -o
+KERNEL_SOURCE_FILES := -type f \( -name '*.c' -o -name '*.h' -o -name '*.S' -o -name '*.s' \)
+KERNEL_STAGE_CLEAN = find "$(KERNEL_BUILD_DIR)" \
+	\( -path "$(KERNEL_BUILD_DIR)/bkp" -o -path "$(KERNEL_BUILD_DIR)/dist" \) -prune -o \
+	-type f ! -name '*.mod.c' \( -name '*.c' -o -name '*.h' -o -name '*.S' -o -name '*.s' \) \
+	-exec rm -f {} +
 
-SHELL_FILES  := $(shell find $(SHELL_DIRS) -name "*.sh" 2>/dev/null)
+ifeq ($(KERNELRELEASE),)
+ifneq (,$(filter $(KERNEL_BUILD_DIR) $(KERNEL_BUILD_DIR)/%,$(KERNEL_SRC_DIR)))
+$(error KERNEL_BUILD_DIR ($(KERNEL_BUILD_DIR)) must not contain KERNEL_SRC_DIR ($(KERNEL_SRC_DIR)))
+endif
+endif
+
+ifneq ($(strip $(SHELL_DIRS)),)
+SHELL_FILES := $(shell find $(abspath $(SHELL_DIRS)) -name "*.sh" 2>/dev/null)
+else
+SHELL_FILES :=
+endif
 KERNEL_PKG_NAME  ?= $(KERNEL_DIST_DIR)/$(MOD_NAME_C)
 
 # --- Architecture & Kernel Directory
@@ -76,9 +99,7 @@ PWD := $(KERNEL_BUILD_DIR)
 obj-m += $(MOD_NAME_C).o
 
 # --- Debug & Compiler Flags
-ifeq ($(DEBUG_MODE),)
-    ONDEBUG := y
-endif
+ONDEBUG ?= $(DEBUG_MODE)
 DBG_STRIP := y
 
 ifeq ($(ONDEBUG),y)
@@ -113,6 +134,7 @@ endif
 
 # --- Tools Settings
 INDENT       := indent
+INDENT_FLAGS := -npro -kr -i8 -ts8 -sob -l80 -ss -ncs -cp1 -il0
 CLANG_FORMAT := clang-format
 CHECKPATCH   ?= $(if $(wildcard $(KDIR)/scripts/checkpatch.pl),$(KDIR)/scripts/checkpatch.pl,checkpatch.pl)
 BEAR         := bear
@@ -132,9 +154,10 @@ noat = $(subst @,,$(1))
 # failure so build/kernel retains generated files only.
 define run_kbuild
 @set -e; \
-	trap 'find "$(KERNEL_BUILD_DIR)" -type f ! -name "*.mod.c" \( -name "*.c" -o -name "*.h" -o -name "*.S" -o -name "*.s" \) -delete' EXIT; \
-	(cd "$(KERNEL_SRC_DIR)" && find . -type d \( -name .git -o -name bkp -o -name dist -o -name build -o -name 'cmake-build-*' \) -prune -o \
-		-type f ! -name '*.mod.c' \( -name '*.c' -o -name '*.h' -o -name '*.S' -o -name '*.s' \) \
+	clean_stage() { $(KERNEL_STAGE_CLEAN); }; \
+	trap clean_stage EXIT; \
+	(cd "$(KERNEL_SRC_DIR)" && find . $(KERNEL_FIND_PRUNE) \
+		-type f ! -name '*.mod.c' $(KERNEL_SOURCE_FILES) \
 		-exec cp --parents -t "$(KERNEL_BUILD_DIR)" {} +); \
 	$(1)
 endef
@@ -143,7 +166,7 @@ endef
 # BUILD
 # ======
 .PHONY: all build install dt nsdeps clean compile-bear lkcode-style \
-	clang-format indent checkpatch format-shell lint-shell sa sa_sparse sa_gcc sa_flawfinder \
+	format clang-format indent backup-sources checkpatch format-shell lint-shell sa sa_sparse sa_gcc sa_flawfinder \
 	sa_cppcheck dist tarxz-pkg clean-dist mrproper help env
 
 ifeq ($(KERNELRELEASE),)
@@ -202,7 +225,7 @@ env:
 	$(Q)$(BUILDER) $(BUILDER_FLAGS) --create --directory "$(KERNEL_BUILD_DIR)"
 	$(Q)$(BUILDER) $(BUILDER_FLAGS) --create --directory "$(KERNEL_DIST_DIR)"
 	$(Q)$(BUILDER) $(BUILDER_FLAGS) --copy --files "$(KERNEL_SRC_DIR)/Makefile" --directory "$(KERNEL_BUILD_DIR)"
-	$(Q)find "$(KERNEL_BUILD_DIR)" -type f ! -name '*.mod.c' \( -name '*.c' -o -name '*.h' -o -name '*.S' -o -name '*.s' \) -delete
+	$(Q)$(KERNEL_STAGE_CLEAN)
 	@if [ -f "$(KERNEL_SRC_DIR)/Kbuild" ]; then \
 		cp -f "$(KERNEL_SRC_DIR)/Kbuild" "$(KERNEL_BUILD_DIR)/Kbuild"; \
 	fi
@@ -216,33 +239,48 @@ env:
 format: lkcode-style
 lkcode-style: clang-format indent checkpatch format-shell
 
-clang-format:
+backup-sources:
+	$(Q)mkdir -p "$(KERNEL_BUILD_DIR)/bkp"
+	$(Q)for dir in $(KERNEL_STYLE_DIRS); do \
+		rel_dir=$$(realpath --relative-to="$(ROOT_DIR)" "$$dir"); \
+		case "$$rel_dir" in ../*) rel_dir="external/$$(basename "$$dir")" ;; esac; \
+		mkdir -p "$(KERNEL_BUILD_DIR)/bkp/$$rel_dir"; \
+		(cd "$$dir" && find . $(KERNEL_FIND_PRUNE) $(KERNEL_SOURCE_FILES) \
+			-exec cp --parents -t "$(KERNEL_BUILD_DIR)/bkp/$$rel_dir" {} +); \
+	done
+
+clang-format: backup-sources
 	$(call find_package,$(CLANG_FORMAT))
 	$(call print_step,Formatting kernel source files with clang-format)
-	$(Q)find "$(KERNEL_SRC_DIR)" $(KERNEL_INCLUDE_DIRS) \
-		\( -type d \( -name .git -o -name bkp -o -name build -o -name dist \
-			-o -name 'cmake-build-*' \) -prune \) -o \
+	$(Q)find $(KERNEL_STYLE_DIRS) $(KERNEL_FIND_PRUNE) \
 		-type f \( -name '*.c' -o -name '*.h' \) \
-		-exec $(CLANG_FORMAT) --fallback-style=none -i {} +
+		-exec $(CLANG_FORMAT) --style=file --fallback-style=none -i {} +
 
-indent:
+indent: backup-sources
 	$(call find_package,$(INDENT))
 	$(call print_step,Applying kernel code style indentation)
-	$(Q)mkdir -p "$(KERNEL_BUILD_DIR)/bkp"
-	$(Q)cp -f "$(KERNEL_SRC_DIR)"/*.[chsS] "$(KERNEL_BUILD_DIR)/bkp/" 2>/dev/null || true
-	$(Q)find "$(KERNEL_SRC_DIR)" $(KERNEL_INCLUDE_DIRS) \
-		\( -type d \( -name .git -o -name bkp -o -name build -o -name dist \
-			-o -name 'cmake-build-*' \) -prune \) -o \
-		-type f \( -name '*.c' -o -name '*.h' -o -name '*.S' -o -name '*.s' \) \
-		-exec $(INDENT) -linux --line-length95 {} + 2>/dev/null || true
+	$(Q)find $(KERNEL_STYLE_DIRS) \
+		$(KERNEL_FIND_PRUNE) $(KERNEL_SOURCE_FILES) \
+		-exec sh -c '\
+			indent_bin=$$1; shift; \
+			for source do \
+				temp="$${source}.indent.tmp"; \
+				cp -p "$$source" "$$temp" || exit 1; \
+				if "$$indent_bin" $(INDENT_FLAGS) -o "$$temp" "$$source"; then \
+					mv -f "$$temp" "$$source" || exit 1; \
+				else \
+					rm -f "$$temp"; exit 1; \
+				fi; \
+			done' sh "$(INDENT)" {} +
 
 checkpatch:
 	$(call find_package,$(CHECKPATCH))
 	$(call print_step,Running kernel code style check with checkpatch.pl)
-	$(Q)find "$(KERNEL_SRC_DIR)" $(KERNEL_INCLUDE_DIRS) \
+	$(Q)find $(KERNEL_STYLE_DIRS) $(KERNEL_FIND_PRUNE) \
 		-type f \( -name '*.c' -o -name '*.h' \) -print0 | \
 		xargs -0 -r $(CHECKPATCH) --no-tree -f --max-line-length=95
 
+ifneq ($(strip $(SHELL_FILES)),)
 format-shell: lint-shell
 	$(call find_package,$(SHFMT))
 	$(call print_step,Formatting shell scripts with $(SHFMT))
@@ -253,6 +291,11 @@ lint-shell:
 	$(call print_step,Linting shell scripts (POSIX sh) with $(SHELLCHECK))
 	$(Q)$(SHELLCHECK) -s sh -x $(SHELL_FILES)
 
+else
+format-shell lint-shell:
+	$(call print_y,No shell scripts found; skipping shell lint and format.)
+endif
+
 # =====================
 # SA - STATIC ANALYSIS
 # =====================
@@ -262,7 +305,7 @@ sa_sparse: env
 	$(call find_package,$(SPARSE))
 	$(call find_package,$(MAKE))
 	$(call print_step,Running static analysis with sparse)
-	$(call run_kbuild,$(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" C=2 CHECK="$(SPARSE) --os=linux --arch=$(ARCH)" INCLUDE_DIRS="$(KERNEL_INCLUDE_DIRS)" modules 2>&1 | egrep -v "^\./include/.*\.h|^\./arch/.*\.h")
+	$(call run_kbuild,set +e; log="$(KERNEL_BUILD_DIR)/.sparse.log"; $(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" C=2 CHECK="$(SPARSE) --os=linux --arch=$(ARCH)" INCLUDE_DIRS="$(KERNEL_INCLUDE_DIRS)" modules > "$$log" 2>&1; status=$$?; grep -Ev "^\./include/.*\.h|^\./arch/.*\.h" "$$log" || true; rm -f "$$log"; exit "$$status")
 
 sa_gcc: env
 	$(call find_package,$(MAKE))
@@ -272,7 +315,7 @@ sa_gcc: env
 sa_flawfinder:
 	$(call find_package,$(FLAWFINDER))
 	$(call print_step,Running static analysis with flawfinder)
-	$(Q)$(FLAWFINDER) "$(KERNEL_SRC_DIR)" $(KERNEL_INCLUDE_DIRS)
+	$(Q)$(FLAWFINDER) $(KERNEL_STYLE_DIRS)
 
 sa_cppcheck:
 	$(call find_package,$(CPPCHECK))
@@ -280,7 +323,7 @@ sa_cppcheck:
 	$(Q)$(CPPCHECK) -v --force --enable=all \
 		$(KERNEL_INCLUDE_FLAGS) \
 		-i "$(KERNEL_BUILD_DIR)" -i "$(KERNEL_DIST_DIR)" \
-		--suppress=missingIncludeSystem "$(KERNEL_SRC_DIR)" $(KERNEL_INCLUDE_DIRS)
+		--suppress=missingIncludeSystem $(KERNEL_STYLE_DIRS)
 
 # =================
 # BUILD ENVIRONMENT
@@ -291,7 +334,7 @@ compile-bear: env
 	$(call print_step,Generating compile_commands.json with bear...)
 	$(call run_kbuild,cd "$(KERNEL_BUILD_DIR)" && $(BEAR) -- $(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) INCLUDE_DIRS="$(KERNEL_INCLUDE_DIRS)" modules)
 	@if [ -f "$(KERNEL_BUILD_DIR)/$(MOD_NAME_C).ko" ]; then \
-		$(call noat,$(call print_info,Module built and compile_commands.json generated.)); \
+		$(call noat,$(call print_info,Module '$(MOD_NAME_C).ko' built and compile_commands.json generated.)); \
 	fi
 
 # ================
