@@ -26,6 +26,7 @@ include $(CONFIG_DIR)/config.mk
         mrproper env app-env driver-env
 
 .DEFAULT_GOAL := help
+.NOTPARALLEL: all
 
 print-version:
 	@echo -n "Project Version: "
@@ -93,7 +94,7 @@ clean-app:
 run: run-app run-driver
 
 run-driver:
-	@$(call print_y,run-driver: not implemented yet)
+	$(MAKE) -C $(DRIVER_DIR) run
 
 run-app:
 	@$(call print_y,run-app: not implemented yet)
@@ -119,7 +120,7 @@ help:
 	$(call print_y,Usage: make <target> [VARIABLE=value])
 	@echo
 	$(call print_g,Build and Orchestration Targets ::)
-	@echo "  all             Run clean, format, and build all targets (in this order)"
+	@echo "  all             Run clean, format, then build app and driver sequentially"
 	@echo "  build           Build both kernel driver and userspace application"
 	@echo "  build-driver    Build the kernel driver only"
 	@echo "  build-app       Build the userspace application only"
@@ -132,7 +133,7 @@ help:
 	@echo "  clean-driver    Remove kernel driver build artifacts"
 	@echo "  clean-app       Remove userspace build artifacts"
 	@echo "  mrproper        Completely remove the build directory ($(BUILD_DIR))"
-	@echo "  run             Run userspace app and driver test (stub)"
+	@echo "  run             Run the userspace app and driver test targets (currently stubs)"
 	@echo "  print-version   Print project version"
 	@echo "  help            Display this help message"
 	@echo ""
@@ -149,7 +150,7 @@ help:
 	@echo "  C               Enable/disable colors (default: 1)"
 	@echo "  B               Enable/disable bold text (default: 0)"
 	@echo "  IN_BOLD         Enable/disable bold text (default: 0)"
-	@echo "  DEBUG_MODE      Enable debug mode (default: 1)"
+	@echo "  DEBUG_MODE      Select debug app build (1 = debug, otherwise production; default: $(DEBUG_MODE))"
 	@echo "  ROOT_DIR        Current root directory of the project"
 	@echo "  ARCH            Target architecture, forwarded to the kernel build"
 	@echo "  CROSS_COMPILE   Cross-compiler prefix, forwarded to both builds"

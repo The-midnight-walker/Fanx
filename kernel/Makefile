@@ -58,6 +58,8 @@ $(MOD_NAME_C)-objs ?=
 # of whether make is invoked from kernel/ or build/.
 KERNEL_BUILD_DIR ?= $(if $(BUILD_DIR),$(abspath $(if $(DRV_BUILD_DIR),$(DRV_BUILD_DIR),$(BUILD_DIR)/kernel)),$(abspath $(dir $(firstword $(MAKEFILE_LIST)))))
 KERNEL_DIST_DIR  ?= $(KERNEL_BUILD_DIR)/dist
+KERNEL_ENV_STAMP := $(KERNEL_BUILD_DIR)/.env.stamp
+KERNEL_ENV_FILES := $(ROOT_DIR)/Makefile $(KERNEL_SRC_DIR)/Makefile $(wildcard $(KERNEL_SRC_DIR)/Kbuild $(KERNEL_SRC_DIR)/Kconfig)
 SHELL_DIRS   ?= $(SCRIPTS_DIR) $(CONFIG_DIR)
 INCLUDE_DIRS ?= $(ROOT_DIR)/include $(ROOT_DIR)/include/uapi
 KERNEL_INCLUDE_DIRS := $(sort $(abspath $(ROOT_DIR) $(INCLUDE_DIRS)))
@@ -82,6 +84,17 @@ SHELL_FILES := $(shell find $(abspath $(SHELL_DIRS)) -name "*.sh" 2>/dev/null)
 else
 SHELL_FILES :=
 endif
+
+ifeq ($(V),1)
+    LKM_FLAGS += -v
+endif
+ifeq ($(C),1)
+    LKM_FLAGS += -c
+endif
+ifeq ($(B),1)
+    LKM_FLAGS += -b
+endif
+
 KERNEL_PKG_NAME  ?= $(KERNEL_DIST_DIR)/$(MOD_NAME_C)
 
 # --- Architecture & Kernel Directory
@@ -100,9 +113,12 @@ obj-m += $(MOD_NAME_C).o
 
 # --- Debug & Compiler Flags
 ONDEBUG ?= $(DEBUG_MODE)
+DEBUG_MODE_VALUE := $(if $(filter y 1,$(DEBUG_MODE)),1,0)
 DBG_STRIP := y
 
-ifeq ($(ONDEBUG),y)
+ccflags-y += -DDEBUG_MODE=$(DEBUG_MODE_VALUE)
+
+ifneq ($(filter y 1,$(ONDEBUG)),)
     ccflags-y += -DDEBUG -g -Wall -fno-omit-frame-pointer -ggdb -gdwarf-4 -fvar-tracking-assignments
     DBG_STRIP := n
 else
@@ -145,6 +161,7 @@ CPPCHECK     := cppcheck
 TAR          := tar
 SHFMT        ?= shfmt
 SHELLCHECK   ?= shellcheck
+LKM          := $(abspath $(SCRIPTS_DIR)/lkm.sh)
 
 # Drop the leading '@' at the beginning of a macro.
 noat = $(subst @,,$(1))
@@ -165,7 +182,7 @@ endef
 # ======
 # BUILD
 # ======
-.PHONY: all build install dt nsdeps clean compile-bear lkcode-style \
+.PHONY: all build run install dt nsdeps clean compile-bear lkcode-style \
 	format clang-format indent backup-sources checkpatch format-shell lint-shell sa sa_sparse sa_gcc sa_flawfinder \
 	sa_cppcheck dist tarxz-pkg clean-dist mrproper help env
 
@@ -179,6 +196,7 @@ endif
 endif
 
 all: clean lkcode-style sa compile-bear
+.NOTPARALLEL: all
 
 build: env
 	$(call print_step,Building '$(MOD_NAME_C).ko' [ARCH=$(ARCH) KDIR=$(KDIR)])
@@ -190,6 +208,10 @@ build: env
 		$(call noat,$(call print_err,Failed to build $(MOD_NAME_C).ko)); \
 		exit 1; \
 	fi
+
+run: env
+	$(call print_step, run the $(LKM) script)
+	$(Q)cd "$(KERNEL_BUILD_DIR)" && sudo "$(LKM)" $(LKM_FLAGS) -r "$(MOD_NAME_C)"
 
 install: env
 	$(call print_step,Installing module to $(KMODDIR)...)
@@ -220,10 +242,13 @@ nsdeps: env
 	$(call find_package,$(MAKE))
 	$(call run_kbuild,$(MAKE) -C "$(KDIR)" M="$(KERNEL_BUILD_DIR)" INCLUDE_DIRS="$(KERNEL_INCLUDE_DIRS)" nsdeps)
 
-env:
+env: $(KERNEL_ENV_STAMP)
+
+$(KERNEL_ENV_STAMP): $(KERNEL_ENV_FILES)
 	$(call print_step,Creating kernel module build environment)
 	$(Q)$(BUILDER) $(BUILDER_FLAGS) --create --directory "$(KERNEL_BUILD_DIR)"
 	$(Q)$(BUILDER) $(BUILDER_FLAGS) --create --directory "$(KERNEL_DIST_DIR)"
+	$(Q)$(BUILDER) $(BUILDER_FLAGS) --copy --files "$(ROOT_DIR)/Makefile" --directory "$(BUILD_DIR)"
 	$(Q)$(BUILDER) $(BUILDER_FLAGS) --copy --files "$(KERNEL_SRC_DIR)/Makefile" --directory "$(KERNEL_BUILD_DIR)"
 	$(Q)$(KERNEL_STAGE_CLEAN)
 	@if [ -f "$(KERNEL_SRC_DIR)/Kbuild" ]; then \
@@ -232,6 +257,7 @@ env:
 	@if [ -f "$(KERNEL_SRC_DIR)/Kconfig" ]; then \
 		cp -f "$(KERNEL_SRC_DIR)/Kconfig" "$(KERNEL_BUILD_DIR)/Kconfig"; \
 	fi
+	$(Q)touch "$@"
 
 # =======================
 # LINUX KERNEL CODE STYLE
@@ -374,24 +400,27 @@ mrproper: clean clean-dist
 help:
 	@echo
 	$(call print_g,=== Kernel Makefile Help ===)
-	$(call print_y,Usage: make <target> [MOD_NAME_C=filename] [ARCH=arch] [CROSS_COMPILE=prefix])
+	$(call print_y,Usage: make <target> [VARIABLE=value])
 	@echo
 	$(call print_g,Build & Execution Targets ::)
-	@echo "  build          Build the kernel module (.ko)"
-	@echo "  install        Install the module and run depmod"
+	@echo "  build          Build the module and leave generated artifacts under $(KERNEL_BUILD_DIR)"
+	@echo "  run            Build if needed, then load the module (requires root)"
+	@echo "  install        Build, install the module, and run depmod (requires root)"
 	@echo "  dt             Compile a Device Tree Blob from the matching .dts file"
 	@echo "  nsdeps         Resolve module symbol namespace dependencies"
-	@echo "  env            Prepare $(KERNEL_BUILD_DIR) and copy its build Makefiles"
-	@echo "  compile-bear   Build the module and generate compile_commands.json"
-	@echo "  clean          Remove generated files from $(KERNEL_BUILD_DIR)"
-	@echo "  all            Run clean, style checks, static analysis, and bear build"
+	@echo "  env            Prepare build directories/Makefiles once, and refresh when their sources change"
+	@echo "  compile-bear   Build the module and generate compile_commands.json with Bear"
+	@echo "  clean          Remove generated module/build artifacts (keeps bkp/ and dist/)"
+	@echo "  all            Run clean, formatting, static analysis, and Bear build"
 	@echo "  help           Display this help message"
 	@echo
 	$(call print_g,Code Style & Quality Targets ::)
-	@echo "  clang-format   Format kernel C sources"
-	@echo "  indent         Apply Linux kernel indentation"
-	@echo "  checkpatch     Check source files with checkpatch.pl"
-	@echo "  lkcode-style   Run formatting and checkpatch targets"
+	@echo "  format         Run kernel and shell formatting targets"
+	@echo "  backup-sources Back up kernel sources and configured headers under $(KERNEL_BUILD_DIR)/bkp"
+	@echo "  clang-format   Format C/header files with clang-format"
+	@echo "  indent         Format C/header/assembly files with Linux Lindent options"
+	@echo "  checkpatch     Check kernel and configured header sources with checkpatch.pl"
+	@echo "  lkcode-style   Run clang-format, indent, checkpatch, and shell formatting"
 	@echo "  format-shell   Format shell scripts after linting them"
 	@echo "  lint-shell     Lint shell scripts with shellcheck"
 	@echo
@@ -409,19 +438,28 @@ help:
 	@echo "  mrproper       Remove kernel build files and archives"
 	@echo
 	$(call print_g,Variables ::)
-	@echo "  V               Kernel-style verbose flag (1 = show commands, default: 0)"
-	@echo "  C               Enable/disable colors (default: 1)"
-	@echo "  B               Enable/disable bold text (default: 0)"
-	@echo "  MOD_NAME_C      Module source name without .c extension"
+	@echo "  V               Verbose command output (1 = on, default: 0)"
+	@echo "  C               Colored output (1 = on, default: 0)"
+	@echo "  B               Bold output (1 = on, default: 0)"
+	@echo "  MOD_NAME_C      Module source name without .c extension (default: fanx)"
 	@echo "  ARCH            Target architecture (e.g., arm64, powerpc)"
 	@echo "  CROSS_COMPILE   Cross-compiler toolchain prefix"
-	@echo "  KDIR            Kernel build tree directory"
-	@echo "  KMODDIR         Module installation directory"
-	@echo "  INCLUDE_DIRS    Additional API/header directories"
-	@echo "  KERNEL_BUILD_DIR Build output directory (default: BUILD_DIR/kernel)"
-	@echo "  KERNEL_DIST_DIR Source archive directory (default: BUILD_DIR/kernel/dist)"
-	@echo "  ONDEBUG         Enable debug flags and disable stripping (y/n)"
-	@echo "  CHECKPATCH      Path to kernel checkpatch.pl script"
-	@echo "  INDENT          Formatter binary (default: indent)"
-	@echo "  CPPCHECK        Cppcheck binary (default: cppcheck)"
+	@echo "  KDIR            Kernel build tree (default: /lib/modules/\$$(uname -r)/build)"
+	@echo "  KMODDIR         Module installation root (default: /lib/modules/\$$(uname -r))"
+	@echo "  INCLUDE_DIRS    Extra API/header directories (default: ROOT_DIR/include and include/uapi)"
+	@echo "  KERNEL_BUILD_DIR Module output directory (default: BUILD_DIR/kernel)"
+	@echo "  KERNEL_DIST_DIR Source archive directory (default: KERNEL_BUILD_DIR/dist)"
+	@echo "  DEBUG_MODE      C macro value: 1 for y/1, otherwise 0 (default: $(DEBUG_MODE))"
+	@echo "  ONDEBUG         Enable debug compiler flags and disable stripping (y/1; default: DEBUG_MODE)"
+	@echo "  CHECKPATCH      Kernel checkpatch.pl path or command"
+	@echo "  INDENT          GNU indent executable (default: indent)"
+	@echo "  INDENT_FLAGS    GNU indent options (Linux Lindent defaults)"
+	@echo "  CLANG_FORMAT    Formatter command (default: clang-format)"
+	@echo "  BEAR            Compilation database tool (default: bear)"
+	@echo "  DTC             Device Tree compiler (default: dtc)"
+	@echo "  SPARSE          Sparse analyzer (default: sparse)"
+	@echo "  FLAWFINDER      Flawfinder analyzer (default: flawfinder)"
+	@echo "  CPPCHECK        Cppcheck analyzer (default: cppcheck)"
+	@echo "  SHFMT           Shell formatter (default: shfmt)"
+	@echo "  SHELLCHECK      Shell linter (default: shellcheck)"
 	@echo
