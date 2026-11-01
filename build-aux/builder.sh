@@ -44,11 +44,15 @@ usage()
     echo "  --verbose                  Enable verbose informational messages"
     echo "  --bold                     Enable bold text styling in colors"
     echo "  --color                    Enable ANSI colored output"
-    echo "  --print <color> <string>   Print a message in color (green, blue, red, yellow)"
+    echo "  --print <color> <string>   Print a message in color (green, blue, \
+red, yellow)"
     echo "  --print-err <string>       Print an error message in red to stderr"
-    echo "  --copy                     Copy files (cp -p) to destination directory"
-    echo "  --create                   Create a directory path (mkdir -p, mode 0700)"
-    echo "  --directory <path>         Target directory path for --create or --copy"
+    echo "  --copy                     Copy files (cp -p) to destination \
+directory"
+    echo "  --create                   Create a directory path (mkdir -p, mode \
+0700)"
+    echo "  --directory <path>         Target directory path \
+for --create or --copy"
     echo "  --files <file...>          List of source files to copy"
     echo "  --help                     Display this help message"
 }
@@ -63,7 +67,8 @@ _do_print()
     red) _print_r "${_msg}" ;;
     yellow) _print_y "${_msg}" ;;
     *)
-        print_err "Unknown color '${_color}': available colors are green, blue, red, yellow"
+        print_err "Unknown color '${_color}': available colors are green, blue,\
+ red, yellow"
         return 1
         ;;
     esac
@@ -112,7 +117,8 @@ _parser()
         --print)
             if [ "$#" -lt 3 ] || [ -z "${2}" ] || [ -z "${3}" ]; then
                 _opt_error "Option '--print' requires a color and a string"
-                printf 'Usage: %s --print <green|blue|red|yellow> <string>\n' "${SCRIPT_NAME}" >&2
+                _print_g "Usage: ${SCRIPT_NAME} --print \
+<green|blue|red|yellow> <string>" >&2
                 return 2
             fi
             _DO_PRINT_COLOR="${2}"

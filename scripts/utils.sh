@@ -102,7 +102,8 @@ _is_login_root()
     # Verify that this script is running with root privileges
     # NOTE: `return 1` instead of `exit 1`.
     if [ "$(id -u)" -ne 0 ]; then
-        print_err 'Not logged in as root to carry out this operation: Permission denied'
+        print_err "Not logged in as root to carry out this operation: \
+Permission denied"
         return 1
     fi
     return 0
