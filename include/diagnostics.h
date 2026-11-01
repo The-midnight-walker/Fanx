@@ -42,10 +42,10 @@
 #define prfx_fmt ""
 #endif
 
-#ifdef DEBUG
+#ifdef DEBUG_MODE
 /* Debug builds: prefix + function name + line number, then the caller's format.
  */
-#define pr_fmt(fmt) prfx_fmt ": %s:%d: " fmt, __func__, __LINE__
+#define pr_fmt(fmt) prfx_fmt ": [ %s:%d ] " fmt, __func__, __LINE__
 #else
 /* Release builds: prefix only. */
 #define pr_fmt(fmt) prfx_fmt ": " fmt
@@ -84,7 +84,7 @@
     } while (0)
 #endif
 
-#endif				/* __KERNEL__ */
+#endif /* __KERNEL__ */
 
 /* =========================
  * TRACING MESSAGES PRINTING
@@ -129,7 +129,7 @@
 #define HexDump(from_addr, len)                                                \
     print_hex_dump_bytes(" ", DUMP_PREFIX_ADDRESS, from_addr, len)
 #endif
-#else				/* #ifdef DEBUG */
+#else /* #ifdef DEBUG */
 #define PRINT(string, args...)
 #define PRINT_SHORT(string, args...)
 #define QPRINT
@@ -162,7 +162,7 @@
 #define SHOW_DELTA_MGT(low, hi)                                                \
     (low), (hi), (((hi) - (low)) >> 20), (((hi) - (low)) >> 30),               \
         (((hi) - (low)) >> 40)
-#else				// 32-bit
+#else // 32-bit
 #define SHOW_DELTA_MGT(low, hi)                                                \
     (low), (hi), (((hi) - (low)) >> 20), (((hi) - (low)) >> 30)
 #endif
@@ -276,7 +276,7 @@
         }                                                                      \
     } while (0)
 
-#endif				/* __KERNEL__ */
+#endif /* __KERNEL__ */
 
 /* ==========
  * DELAY LOOP
@@ -294,10 +294,10 @@
 static inline void beep(int what)
 {
 #ifdef __KERNEL__
-	pr_cont("%c", (char)what);
+    pr_cont("%c", (char)what);
 #else
-	char buf = (char)what;
-	(void)write(STDOUT_FILENO, &buf, 1);
+    char buf = (char)what;
+    (void)write(STDOUT_FILENO, &buf, 1);
 #endif
 }
 
@@ -359,11 +359,11 @@ static inline void beep(int what)
             pr_warn("SHOW_DELTA(): invalid parameters (earlier > later?)\n");  \
         }                                                                      \
     } while (0)
-#else				/* 32-bit architecture fallback */
+#else /* 32-bit architecture fallback */
 #define SHOW_DELTA(later, earlier)                                             \
     pr_warn("SHOW_DELTA(): ktime_sub() not supported on 32-bit\n")
 #endif
 
-#endif				/* __KERNEL__ */
+#endif /* __KERNEL__ */
 
-#endif				/* DIAGNOSTICS_H_ */
+#endif /* DIAGNOSTICS_H_ */
