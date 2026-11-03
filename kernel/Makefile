@@ -94,6 +94,9 @@ endif
 ifeq ($(B),1)
     LKM_FLAGS += -b
 endif
+ifeq ($(CLEAR),1)
+    LKM_FLAGS += -C
+endif
 
 KERNEL_PKG_NAME  ?= $(KERNEL_DIST_DIR)/$(MOD_NAME_C)
 
@@ -211,7 +214,7 @@ build: env
 
 run: env
 	$(call print_step, run the $(LKM) script)
-	$(Q)cd "$(KERNEL_BUILD_DIR)" && sudo "$(LKM)" $(LKM_FLAGS) -r "$(MOD_NAME_C)"
+	$(Q)cd "$(KERNEL_BUILD_DIR)" && sudo "$(LKM)" $(LKM_FLAGS) -r --clear "$(MOD_NAME_C)"
 
 install: env
 	$(call print_step,Installing module to $(KMODDIR)...)
@@ -441,6 +444,7 @@ help:
 	@echo "  V               Verbose command output (1 = on, default: 0)"
 	@echo "  C               Colored output (1 = on, default: 0)"
 	@echo "  B               Bold output (1 = on, default: 0)"
+	@echo "  CLEAR           Clear dmesg ring buffer before loading (1 = on, default: 0)"
 	@echo "  MOD_NAME_C      Module source name without .c extension (default: fanx)"
 	@echo "  ARCH            Target architecture (e.g., arm64, powerpc)"
 	@echo "  CROSS_COMPILE   Cross-compiler toolchain prefix"

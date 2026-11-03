@@ -11,7 +11,7 @@
 /* Dynamically allocated our major number by the kernel
 so don't need to define the major number*/
 #define FANX_CDEV_BASEMINOR 0
-#define FANX_CDEV_MINOR_NR 2
+#define FANX_CDEV_MINOR_NR 1
 
 struct fanx_prvctx_struct {
     /* Cacheline 0 */
@@ -22,8 +22,8 @@ struct fanx_prvctx_struct {
     /* Cacheline 1 */
     struct mutex mtx ____cacheline_aligned;
 
-    /* Cacheline 2 and 3 */
-    struct fanx_ds kcfg;
+    /* Cacheline 2 and 3 (128 bytes) */
+    struct fanx_ds kcfg ____cacheline_aligned;
 
     /* Cacheline 4 */
     struct class *dev_class ____cacheline_aligned;

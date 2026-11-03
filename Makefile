@@ -94,7 +94,7 @@ clean-app:
 run: run-app run-driver
 
 run-driver:
-	$(MAKE) -C $(DRIVER_DIR) run
+	$(MAKE) -C $(DRIVER_DIR) run CLEAR=$(CLEAR)
 
 run-app:
 	@$(call print_y,run-app: not implemented yet)

@@ -71,17 +71,16 @@
 #undef USE_FTRACE_BUFFER
 #endif
 
+#ifndef FANX_USE_RATELIMIT
+#define FANX_USE_RATELIMIT 1
+#endif
+
 #ifdef USE_FTRACE_BUFFER
 #define DBGPRINT(string, args...) trace_printk(string, ##args)
+#elif FANX_USE_RATELIMIT
+#define DBGPRINT(string, args...) pr_info_ratelimited(string, ##args)
 #else
-#define DBGPRINT(string, args...)                                              \
-    do {                                                                       \
-        int USE_RATELIMITING = 1;                                              \
-        if (USE_RATELIMITING) {                                                \
-            pr_info_ratelimited(string, ##args);                               \
-        } else                                                                 \
-            pr_info(string, ##args);                                           \
-    } while (0)
+#define DBGPRINT(string, args...) pr_info(string, ##args)
 #endif
 
 #endif /* __KERNEL__ */
@@ -346,7 +345,7 @@ static inline void beep(int what)
 
 #define SHOW_DELTA(later, earlier)                                             \
     do {                                                                       \
-        if (time_after((unsigned long)(later), (unsigned long)(earlier))) {    \
+        if (ktime_after((later), (earlier))) {                                 \
             s64 delta_ns = ktime_to_ns(ktime_sub((later), (earlier)));         \
             pr_info("delta: %lld ns", delta_ns);                               \
             if (delta_ns / 1000 >= 1)                                          \
@@ -366,4 +365,4 @@ static inline void beep(int what)
 
 #endif /* __KERNEL__ */
 
-#endif /* DIAGNOSTICS_H_ */
+#endif /* _DIAGNOSTICS_H */

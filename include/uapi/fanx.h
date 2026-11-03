@@ -4,10 +4,15 @@
 #ifndef _UAPI_FANX_H
 #define _UAPI_FANX_H
 
+#include <linux/ioctl.h>
 #include <linux/types.h>
 
 #ifndef FANX_DRIVER_NAME
 #define FANX_DRIVER_NAME "Fanx"
+#endif
+
+#ifndef FANX_DRIVER_VERSION
+#define FANX_DRIVER_VERSION "0.2.0-dev"
 #endif
 
 #ifndef FANX_DEVICE_NAME
@@ -52,8 +57,7 @@ enum fanx_temp_level {
 };
 
 /**
- * struct fanx_status - Structure holding the urrent status and metrics of the
- *                          fan
+ * struct fanx_ds - Structure holding the current status and metrics of the fan
  * @rpm:           Current measured fan speed (RPM)
  * @target_rpm:    Target fan speed setpoint (RPM)
  * @timer_total_s: Requested total duration for the timer mode (seconds)
@@ -63,8 +67,7 @@ enum fanx_temp_level {
  * @mode:          Active operating mode (refer to &enum fanx_mode)
  * @level:         Current thermal level (refer to &enum fanx_temp_level)
  * @running:       Running state flag (1 = active, 0 = stopped)
- * @pad:           Explicit padding alignment byte for structure layout
- *                  consistency (to 128 bytes)
+ * @pad0:          Explicit padding alignment bytes for cacheline 0 layout
  * @profile:       Profile description string (guaranteed NUL-terminated)
  */
 struct fanx_ds {
@@ -75,13 +78,20 @@ struct fanx_ds {
     __u32 timer_left_s;
     __u32 uptime_s;
     __s32 temp_mc;
-    char profile[64];
-
-    /* Cacheline 1 */
     __u8 mode;
     __u8 level;
     __u8 running;
-    __u8 pad[37];
+    __u8 pad0[37];
+
+    /* Cacheline 1 */
+    char profile[64];
 };
+
+/* IOCTL definitions */
+#define FANX_IOC_MAGIC 'v'
+#define FANX_IOC_RESET      _IO(FANX_IOC_MAGIC, 0)
+#define FANX_IOC_SET_CONFIG _IOW(FANX_IOC_MAGIC, 1, struct fanx_ds)
+#define FANX_IOC_GET_CONFIG _IOR(FANX_IOC_MAGIC, 2, struct fanx_ds)
+#define FANX_IOC_MAXNR      2
 
 #endif /* _UAPI_FANX_H */

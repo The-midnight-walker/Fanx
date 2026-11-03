@@ -33,6 +33,7 @@ SCRIPT_DIR="${ROOT_DIR}/scripts"
 #KERNEL_BUILD_DIR="${ROOT_DIR}/build/kernel"
 
 _DO_RUN=""
+_DO_CLEAR_DMESG=0
 
 UTILS_SH="${SCRIPT_DIR}/utils.sh"
 if [ ! -r "${UTILS_SH}" ]; then
@@ -50,6 +51,7 @@ usage()
     echo "  -v, --verbose              Enable verbose informational messages"
     echo "  -c, --color                Enable ANSI colored output"
     echo "  -b, --bold                 Enable bold text styling in colors"
+    echo "  -C, --clear                Clear kernel buffer cache (dmesg -C) before loading"
     echo "  -r, --run <modname>        Build and load the specified kernel \
 module (WITHOUT extension)"
     echo "  -h, --help                 Display this help message"
@@ -66,7 +68,7 @@ _make_build()
 {
     [ -f "${_kmod_name}.ko" ] && return 0
 
-    # TODO: relace 'compile-bear' with 'build'
+    # TODO: replace 'compile-bear' with 'build'
     make C="${_DO_COLOR}" V="${_DO_VERBOSE}" B="${_DO_BOLD}" \
         MOD_NAME_C="${_kmod_name}" compile-bear
 
@@ -103,12 +105,14 @@ _run_kmod()
         rmmod "${_kmod_name}" || return 1
     fi
 
-    # Comment this
-    dmesg -C
+    if [ "${_DO_CLEAR_DMESG:-0}" -eq 1 ]; then
+        dmesg -C
+    fi
 
     insmod "./${_kmod_name}.ko" || {
         print_err "[!] ${SCRIPT_NAME}: insmod failed:"
         _show_dmesg >&2
+        return 1
     }
 
     if [ "${_DO_VERBOSE}" -eq 1 ]; then
@@ -124,7 +128,7 @@ _run_kmod()
 _set_kmod()
 {
     case "$1" in
-    '' | *.* | */*)
+    '' | -* | *.* | */*)
         _opt_error "Specify the kernel module name ONLY \
 (no path, no extension)."
         return 2
@@ -171,18 +175,30 @@ _parser()
             _DO_BOLD=1
             shift
             ;;
-        --help) _DO_HELP=1 ;;
+        --clear)
+            _DO_CLEAR_DMESG=1
+            shift
+            ;;
+        --help)
+            _DO_HELP=1
+            shift
+            ;;
         --run=*)
             _set_kmod "${1#--run=}" || return $?
             shift
             ;;
         --run)
-            if [ "$#" -lt 2 ]; then
-                _opt_error "Option --run requires a module name argument."
-                return 2
+            _DO_RUN=1
+            shift
+            if [ "$#" -gt 0 ]; then
+                case "$1" in
+                -*) ;;
+                *)
+                    _set_kmod "$1" || return $?
+                    shift
+                    ;;
+                esac
             fi
-            _set_kmod "$2" || return $?
-            shift 2
             ;;
         --*)
             _opt_error "Unknown option '$1'"
@@ -198,19 +214,22 @@ _parser()
                 v) _DO_VERBOSE=1 ;;
                 c) _DO_COLOR=1 ;;
                 b) _DO_BOLD=1 ;;
+                C) _DO_CLEAR_DMESG=1 ;;
                 h) _DO_HELP=1 ;;
                 r)
-                    if [ -z "${_opts}" ]; then
-                        if [ "$#" -eq 0 ]; then
-                            _opt_error "Option -r requires a module name \
-argument."
-                            return 2
-                        fi
-                        _opts="$1"
-                        shift
+                    _DO_RUN=1
+                    if [ -n "${_opts}" ]; then
+                        _set_kmod "${_opts}" || return $?
+                        _opts=""
+                    elif [ "$#" -gt 0 ]; then
+                        case "$1" in
+                        -*) ;;
+                        *)
+                            _set_kmod "$1" || return $?
+                            shift
+                            ;;
+                        esac
                     fi
-                    _set_kmod "${_opts}" || return $?
-                    _opts=""
                     ;;
                 *)
                     _opt_error "Unknown option '-${_char}'"
@@ -220,13 +239,24 @@ argument."
             done
             ;;
         *)
-            _opt_error "Unknown option '$1'"
-            return 2
+            if [ -z "${_kmod_name}" ]; then
+                _set_kmod "$1" || return $?
+                shift
+            else
+                _opt_error "Unknown option or extra argument '$1'"
+                return 2
+            fi
             ;;
         esac
     done
 
     [ "${_DO_HELP:-0}" -eq 1 ] && return 3
+
+    if [ -z "${_kmod_name}" ]; then
+        _opt_error "Missing kernel module name."
+        return 2
+    fi
+
     return 0
 }
 
