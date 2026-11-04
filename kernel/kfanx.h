@@ -14,21 +14,21 @@ so don't need to define the major number*/
 #define FANX_CDEV_MINOR_NR 1
 
 struct fanx_prvctx_struct {
-    /* Cacheline 0 */
-    spinlock_t splock;
-    struct timer_list tmr;
-    ktime_t ktime_init;
+	/* Cacheline 0 */
+	spinlock_t splock;
+	struct timer_list tmr;
+	ktime_t ktime_init;
 
-    /* Cacheline 1 */
-    struct mutex mtx ____cacheline_aligned;
+	/* Cacheline 1 */
+	struct mutex mtx ____cacheline_aligned;
 
-    /* Cacheline 2 and 3 (128 bytes) */
-    struct fanx_ds kcfg ____cacheline_aligned;
+	/* Cacheline 2 and 3 */
+	struct fanx_ds kcfg ____cacheline_aligned;
 
-    /* Cacheline 4 */
-    struct class *dev_class ____cacheline_aligned;
-    struct cdev c_dev;
-    struct device *dev;
+	/* Cacheline 4 */
+	struct class *dev_class ____cacheline_aligned;
+	struct cdev c_dev;
+	struct device *dev;
 };
 
 #endif /* _KERNEL_KFANX_H */

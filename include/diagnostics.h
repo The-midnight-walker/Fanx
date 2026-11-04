@@ -42,6 +42,10 @@
 #define prfx_fmt ""
 #endif
 
+#ifdef pr_fmt
+#undef pr_fmt
+#endif
+
 #ifdef DEBUG_MODE
 /* Debug builds: prefix + function name + line number, then the caller's format.
  */
@@ -293,10 +297,10 @@
 static inline void beep(int what)
 {
 #ifdef __KERNEL__
-    pr_cont("%c", (char)what);
+	pr_cont("%c", (char)what);
 #else
-    char buf = (char)what;
-    (void)write(STDOUT_FILENO, &buf, 1);
+	char buf = (char)what;
+	(void)write(STDOUT_FILENO, &buf, 1);
 #endif
 }
 
